@@ -3,6 +3,7 @@ package com.tuya.ai.ipcsdkdemo.video;
 import android.annotation.TargetApi;
 import android.media.MediaCodec;
 import android.media.MediaCodecInfo;
+import android.media.MediaCodecList;
 import android.media.MediaFormat;
 import android.os.Build;
 import android.os.Handler;
@@ -20,6 +21,8 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
@@ -39,6 +42,18 @@ public class VideoCodec {
 
     private ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
 
+
+//    private File temp = new File("/sdcard/temp.h264");
+//    private FileOutputStream fos;
+//
+//    {
+//        try {
+//            fos = new FileOutputStream(temp);
+//        } catch (FileNotFoundException e) {
+//            e.printStackTrace();
+//        }
+//    }
+
     private byte[] SPS;
 
     private byte[] PPS;
@@ -54,11 +69,11 @@ public class VideoCodec {
     
     private int mChannel;
 
-    private FPSCounter fpsCounter = new FPSCounter("VideoCodec");
+//    FPSCounter mCounter = new FPSCounter("capture");
 
     @TargetApi(21)
     public VideoCodec(int channel) {
-        
+
         mChannel = channel;
 
         transManager = IPCServiceManager.getInstance().getService(IPCServiceManager.IPCService.MEDIA_TRANS_SERVICE);
@@ -81,12 +96,15 @@ public class VideoCodec {
                     }
                     buffer.put(data);
                     buffer.clear();
-                    codec.queueInputBuffer(index, 0, data.length, computePresentationTime(), 0);
+                    long l = computePresentationTime();
+//                    Log.w("onOutputBufferAvailable", l + "/");
+                    codec.queueInputBuffer(index, 0, data.length, l, 0);
 
                 }
 
                 @Override
                 public void onOutputBufferAvailable(@NonNull MediaCodec codec, int index, @NonNull MediaCodec.BufferInfo info) {
+//                    Log.w("onOutputBufferAvailable", info.presentationTimeUs + "");
                     ByteBuffer buffer = codec.getOutputBuffer(index);
                     if (buffer == null) {
                         return;
@@ -107,9 +125,16 @@ public class VideoCodec {
                         bytes = outputStream.toByteArray();
                         type = Common.NAL_TYPE.NAL_TYPE_IDR;
                     }
+//                    mCounter.logFrame();
+//                    Log.w("push", bytes.length + "");
                     transManager.pushMediaStream(mChannel, type, bytes);
 
-//                    fpsCounter.logFrame();
+//                    try {
+//                        fos.write(bytes);
+//                        fos.flush();
+//                    } catch (IOException e) {
+//                        e.printStackTrace();
+//                    }
                 }
 
                 @Override
@@ -137,6 +162,8 @@ public class VideoCodec {
     }
 
     private void loadConfig() {
+        Set<Integer> supported = new HashSet<>();
+        getSupportColorFormat(supported);
         mediaFormat = MediaFormat.createVideoFormat("video/avc",  configManager.getInt(mChannel, Common.ParamKey.KEY_VIDEO_WIDTH), configManager.getInt(mChannel, Common.ParamKey.KEY_VIDEO_HEIGHT));
         mediaFormat.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, configManager.getInt(mChannel, Common.ParamKey.KEY_VIDEO_I_FRAME_INTERVAL));
         mediaFormat.setInteger(MediaFormat.KEY_FRAME_RATE, configManager.getInt(mChannel, Common.ParamKey.KEY_VIDEO_FRAME_RATE));
@@ -144,7 +171,14 @@ public class VideoCodec {
         if (Build.VERSION_CODES.KITKAT_WATCH < Build.VERSION.SDK_INT){
             mediaFormat.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible);
         }else {
-            mediaFormat.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Planar);
+            if (supported.contains(MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Planar)){
+                mediaFormat.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Planar);
+            }
+            else if (supported.contains(MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar)){
+                mediaFormat.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar);
+            }else{
+                throw new RuntimeException("do not support color format");
+            }
         }
 //        mediaFormat.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar);
         mediaFormat.setInteger(MediaFormat.KEY_BIT_RATE, configManager.getInt(mChannel, Common.ParamKey.KEY_VIDEO_BIT_RATE));
@@ -229,6 +263,52 @@ public class VideoCodec {
                 }
             }
         });
+    }
+
+    private int getSupportColorFormat(Set<Integer> colorFormat) {
+        int numCodecs = MediaCodecList.getCodecCount();
+        MediaCodecInfo codecInfo = null;
+        for (int i = 0; i < numCodecs && codecInfo == null; i++) {
+            MediaCodecInfo info = MediaCodecList.getCodecInfoAt(i);
+            if (!info.isEncoder()) {
+                continue;
+            }
+            String[] types = info.getSupportedTypes();
+            boolean found = false;
+            for (int j = 0; j < types.length && !found; j++) {
+                if (types[j].equals("video/avc")) {
+                    System.out.println("found");
+                    found = true;
+                }
+            }
+            if (!found)
+                continue;
+            codecInfo = info;
+        }
+
+        Log.e("AvcEncoder", "Found " + codecInfo.getName() + " supporting " + "video/avc");
+
+        // Find a color profile that the codec supports
+        MediaCodecInfo.CodecCapabilities capabilities = codecInfo.getCapabilitiesForType("video/avc");
+        Log.e("AvcEncoder",
+                "length-" + capabilities.colorFormats.length + "==" + Arrays.toString(capabilities.colorFormats));
+
+        for (int i = 0; i < capabilities.colorFormats.length; i++) {
+            colorFormat.add(capabilities.colorFormats[i]);
+            switch (capabilities.colorFormats[i]) {
+                case MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar:
+                case MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Planar:
+                case MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible:
+                    Log.e("AvcEncoder", "supported color format::" + capabilities.colorFormats[i]);
+                    break;
+
+                default:
+                    Log.e("AvcEncoder", "other color format " + capabilities.colorFormats[i]);
+                    break;
+            }
+        }
+        //return capabilities.colorFormats[i];
+        return 0;
     }
 
     public void startCodec() {

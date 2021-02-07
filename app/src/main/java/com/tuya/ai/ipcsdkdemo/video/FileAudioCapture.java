@@ -1,8 +1,7 @@
-package com.tuya.ai.ipcsdkdemo.audio;
+package com.tuya.ai.ipcsdkdemo.video;
 
 import android.content.Context;
 
-import com.tuya.smart.aiipc.ipc_sdk.api.Common;
 import com.tuya.smart.aiipc.ipc_sdk.api.IMediaTransManager;
 import com.tuya.smart.aiipc.ipc_sdk.service.IPCServiceManager;
 
@@ -24,11 +23,14 @@ public class FileAudioCapture {
 
     Context context;
 
-    public FileAudioCapture(Context context) {
+    private int mChannel;
 
+    public FileAudioCapture(Context context, int channel) {
+
+        this.mChannel = channel;
         this.context = context;
         try {
-            fis = context.getAssets().open("test_audio.raw");
+            fis = context.getAssets().open("rawfiles/jupiter_8k_16bit_mono.raw");
         } catch (FileNotFoundException e) {
             e.printStackTrace();
         } catch (IOException e) {
@@ -56,7 +58,7 @@ public class FileAudioCapture {
                     }finally {
 
                     }
-                    transManager.pushMediaStream(Common.ChannelIndex.E_CHANNEL_AUDIO, 0, pcmBuffer);
+                    transManager.pushMediaStream(mChannel, 0, pcmBuffer);
 
                     int frameRate = AUDIO_FPS;
                     int sleepTick = 1000 / frameRate;

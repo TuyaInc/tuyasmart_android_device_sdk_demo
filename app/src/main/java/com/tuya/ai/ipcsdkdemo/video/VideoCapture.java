@@ -19,7 +19,6 @@ public class VideoCapture {
     private byte[] pixelBuffer;
     VideoCodec mCodec;
     private SurfaceTexture mSurfaceTexture;
-
     private int mChannel;
 
     public VideoCapture(int channel) {
@@ -28,12 +27,13 @@ public class VideoCapture {
         mCodec = new VideoCodec(mChannel = channel);
 
     }
+
     public void startVideoCapture() {
         startPreview();
         mCodec.startCodec();
     }
 
-    private void  openCamera() {
+    private void openCamera() {
         mCamera = Camera.open(Camera.CameraInfo.CAMERA_FACING_BACK);
     }
 
@@ -45,7 +45,6 @@ public class VideoCapture {
         //根据自己的设置更改
         p.setPreviewFormat(ImageFormat.NV21);
 //        p.setPreviewFormat(ImageFormat.YV12);
-        p.setPreviewFpsRange(30000, 30000);
         p.setPreviewSize(1280, 720);
 
         try {
@@ -77,7 +76,6 @@ public class VideoCapture {
                 break;
             }
         }
-
         if (isFound){
             p.setPreviewFpsRange(configRate * 1000, configRate * 1000);
         }else{
@@ -103,7 +101,8 @@ public class VideoCapture {
 //        }
 
         mCamera.addCallbackBuffer(pixelBuffer);
-
+//        IFeatureManager featureManager = IPCServiceManager.getInstance().getService(IPCServiceManager.IPCService.FEATURE_SERVICE);
+//        boolean b = featureManager.initMotionDetect(-1280, 720, 3, 30, 0, 0, 1280, 720, 0);
         mCamera.setPreviewCallbackWithBuffer(new Camera.PreviewCallback() {
             @Override
             public void onPreviewFrame(byte[] data, Camera camera) {
@@ -111,6 +110,8 @@ public class VideoCapture {
                 //编码
                 byte[] pixelData = new byte[1280 * 720 * 3 / 2];
                 System.arraycopy(data, 0, pixelData, 0, data.length);
+//                int[] result = featureManager.detectMotion(data);
+//                Log.w("onPreviewFrame", result[0] + "");
                 mCodec.encodeH264(pixelData);
                 camera.addCallbackBuffer(pixelBuffer);
             }
